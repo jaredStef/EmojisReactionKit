@@ -104,7 +104,7 @@ class ViewController: UIViewController {
 
         let shareMenu = UIMenu(title: "", image: nil, identifier: nil, options: [.displayInline], children: shareActions)
         
-        return UIMenu(title: "", image: nil, identifier: nil, options: [.displayInline], children: [postMenu, shareMenu])
+        return UIMenu(title: "", image: nil, identifier: nil, options: [.displayInline], children: [postMenu, /*shareMenu*/])
     }()
    
 }

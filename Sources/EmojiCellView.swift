@@ -75,10 +75,8 @@ class EmojiCellView: UICollectionViewCell {
     
     func animate() {
         UIView.animate(withDuration: 0.15, delay: 0, options: [.curveLinear], animations: {
-            // Slight zoom and lift upward
-            self.emojiLabel.transform = CGAffineTransform(scaleX: 2.0, y: 2.0).concatenating(
-                CGAffineTransform(translationX: 0, y: -25)
-            )
+            // Shrink in place while highlighted
+            self.emojiLabel.transform = CGAffineTransform(scaleX: 0.8, y: 0.8)
         }, completion: nil)
     }
     

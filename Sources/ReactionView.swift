@@ -10,6 +10,9 @@ import UIKit
 
 class ReactionView: UIView {
     
+    /// Width of the trailing pill when the system emoji keyboard is shown (`more` only).
+    private static let keyboardCollapsedChromeWidth = REACTION.getWidth(count: 1) + 16
+    
     private var _emojis: [String] = []
     private var emojis: [String] = []
     private var selectedEmoji: String?
@@ -19,13 +22,49 @@ class ReactionView: UIView {
     private var currentlyHighlightedIndex:IndexPath?
     private var isAnimationDone:Bool = false
     private var isPanChanged = false
+    /// When `true`, the quick emoji strip is hidden for the system emoji keyboard; pan and duplicate more taps are ignored.
+    private var isSystemEmojiKeyboardMode = false
     
     weak var delegate:ReactionViewDelegate?
+
+    private let liquidGlassBackgroundView: UIVisualEffectView = {
+        let view = UIVisualEffectView(effect: nil)
+        view.isUserInteractionEnabled = true
+        view.clipsToBounds = false
+        return view
+    }()
+    
+    /// Trailing-pinned background (liquid glass or solid) whose width animates for the keyboard state; the `ReactionView` frame stays full width so the more button does not move.
+    private let reactionPillChrome: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.clipsToBounds = true
+        view.isUserInteractionEnabled = false
+        return view
+    }()
+    
+    private var chromeLeadingConstraint: NSLayoutConstraint!
+    private var chromeTrailingConstraint: NSLayoutConstraint!
+    private var chromeWidthConstraint: NSLayoutConstraint!
+
+    private var isUsingLiquidGlass: Bool {
+        if #available(iOS 26.0, *) {
+            return true
+        }
+        return false
+    }
     
     override var backgroundColor: UIColor? {
         didSet {
-            super.backgroundColor = backgroundColor
-            self.backButtonBg.backgroundColor = backgroundColor
+            if isUsingLiquidGlass {
+                super.backgroundColor = .clear
+                self.backButtonBg.backgroundColor = .clear
+                reactionPillChrome.backgroundColor = .clear
+            } else {
+                super.backgroundColor = backgroundColor
+                self.backButtonBg.backgroundColor = backgroundColor
+                reactionPillChrome.backgroundColor = backgroundColor
+            }
         }
     }
     
@@ -93,12 +132,15 @@ class ReactionView: UIView {
     
     private func setupView() {
         self.clipsToBounds = false
+        configureLiquidGlassIfNeeded()
         backButtonBg.isHidden = !isMoreButtonEnabled
         moreButton.isHidden = !isMoreButtonEnabled
         moreButton.addTarget(self, action: #selector(didClickButton), for: .touchUpInside)
     }
     
     private func buildView() {
+        self.insertSubview(reactionPillChrome, at: 0)
+        reactionPillChrome.addSubview(liquidGlassBackgroundView)
         self.addSubview(collectionContainerView)
         collectionContainerView.addSubview(collectionView)
         self.addSubview(backButtonBg)
@@ -107,12 +149,28 @@ class ReactionView: UIView {
     
     
     private func makeConstraints() {
+        liquidGlassBackgroundView.translatesAutoresizingMaskIntoConstraints = false
         collectionContainerView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         moreButton.translatesAutoresizingMaskIntoConstraints = false
         backButtonBg.translatesAutoresizingMaskIntoConstraints = false
 
+        chromeTrailingConstraint = reactionPillChrome.trailingAnchor.constraint(equalTo: self.trailingAnchor)
+        chromeLeadingConstraint = reactionPillChrome.leadingAnchor.constraint(equalTo: self.leadingAnchor)
+        chromeWidthConstraint = reactionPillChrome.widthAnchor.constraint(equalToConstant: Self.keyboardCollapsedChromeWidth)
+        chromeWidthConstraint.isActive = false
+        
         NSLayoutConstraint.activate([
+            reactionPillChrome.topAnchor.constraint(equalTo: self.topAnchor),
+            reactionPillChrome.bottomAnchor.constraint(equalTo: self.bottomAnchor),
+            chromeTrailingConstraint,
+            chromeLeadingConstraint,
+
+            liquidGlassBackgroundView.topAnchor.constraint(equalTo: reactionPillChrome.topAnchor),
+            liquidGlassBackgroundView.bottomAnchor.constraint(equalTo: reactionPillChrome.bottomAnchor),
+            liquidGlassBackgroundView.leadingAnchor.constraint(equalTo: reactionPillChrome.leadingAnchor),
+            liquidGlassBackgroundView.trailingAnchor.constraint(equalTo: reactionPillChrome.trailingAnchor),
+
             // collectionContainerView constraints
             collectionContainerView.topAnchor.constraint(equalTo: self.topAnchor, constant: -50),
             collectionContainerView.bottomAnchor.constraint(equalTo: self.bottomAnchor),
@@ -145,22 +203,37 @@ class ReactionView: UIView {
     
     override func layoutSubviews() {
         super.layoutSubviews()
+
+        let pillCornerRadius = bounds.height > 0 ? bounds.height / 2 : REACTION.ITEM_SIZE.height / 2
+        reactionPillChrome.layer.cornerRadius = reactionPillChrome.bounds.height > 0
+            ? reactionPillChrome.bounds.height / 2
+            : pillCornerRadius
         
+        if isUsingLiquidGlass {
+            layer.mask = nil
+            self.layer.cornerRadius = 0
+            liquidGlassBackgroundView.layer.cornerRadius = reactionPillChrome.layer.cornerRadius
+            liquidGlassBackgroundView.layer.masksToBounds = false
+            return
+        }
+
         // this mask allows us to make horizontal clipsToBounds only
         let maskLayer = CAShapeLayer()
         let horizontalClipRect = CGRect(x: 0, y: -200, width: bounds.width, height: bounds.height + 400)
         let cornerRadius: CGFloat = REACTION.ITEM_SIZE.height / 2
-
         let path = UIBezierPath(roundedRect: horizontalClipRect, cornerRadius: cornerRadius)
         maskLayer.path = path.cgPath
         layer.mask = maskLayer
-        
-        self.layer.cornerRadius = self.bounds.size.height / 2
+
+        self.layer.cornerRadius = pillCornerRadius
+        liquidGlassBackgroundView.layer.cornerRadius = reactionPillChrome.layer.cornerRadius
+        liquidGlassBackgroundView.layer.masksToBounds = true
     }
     
     deinit{}
     
     @objc private func didClickButton() {
+        guard !isSystemEmojiKeyboardMode else { return }
         self.delegate?.didSelectMoreButton()
     }
     
@@ -182,8 +255,68 @@ class ReactionView: UIView {
         
     }
     
+    func setSuppressedEmojiCollectionForSystemKeyboard(_ suppressed: Bool, animated: Bool) {
+        guard isMoreButtonEnabled else { return }
+        isSystemEmojiKeyboardMode = suppressed
+        collectionView.isUserInteractionEnabled = !suppressed
+        let apply = {
+            self.applyPillChromeKeyboardCollapsedLayout(suppressed)
+            self.collectionView.alpha = suppressed ? 0 : 1
+            self.collectionView.transform = .identity
+        }
+        if animated {
+            UIView.animate(
+                withDuration: 0.32,
+                delay: 0,
+                usingSpringWithDamping: 0.86,
+                initialSpringVelocity: 0.35,
+                options: [.curveEaseInOut, .allowUserInteraction],
+                animations: apply
+            )
+        } else {
+            apply()
+        }
+    }
+    
+    /// Pins the pill background to the trailing edge with a narrow width (keyboard) or expands it to fill the bar.
+    private func applyPillChromeKeyboardCollapsedLayout(_ collapsed: Bool) {
+        chromeLeadingConstraint.isActive = !collapsed
+        chromeWidthConstraint.isActive = collapsed
+        if !isUsingLiquidGlass {
+            if collapsed {
+                reactionPillChrome.backgroundColor = backButtonBg.backgroundColor
+                super.backgroundColor = .clear
+            } else {
+                let fill = reactionPillChrome.backgroundColor ?? backButtonBg.backgroundColor
+                super.backgroundColor = fill
+                reactionPillChrome.backgroundColor = fill
+            }
+        }
+        layoutIfNeeded()
+    }
+    
     func setupIcon(_ image: UIImage){
-        self.moreButton.setImage(image, for: .normal)
+        self.moreButton.tintColor = .secondaryLabel
+        self.moreButton.setPreferredSymbolConfiguration(
+            UIImage.SymbolConfiguration(pointSize: 22, weight: .regular),
+            forImageIn: .normal
+        )
+        self.moreButton.setImage(image.withRenderingMode(.alwaysTemplate), for: .normal)
+    }
+
+    private func configureLiquidGlassIfNeeded() {
+        if #available(iOS 26.0, *) {
+            let glassEffect = UIGlassEffect(style: .regular)
+            glassEffect.isInteractive = true
+            liquidGlassBackgroundView.effect = glassEffect
+            liquidGlassBackgroundView.isUserInteractionEnabled = true
+            super.backgroundColor = .clear
+            backButtonBg.backgroundColor = .clear
+            reactionPillChrome.backgroundColor = .clear
+        } else {
+            liquidGlassBackgroundView.effect = nil
+            liquidGlassBackgroundView.isUserInteractionEnabled = false
+        }
     }
 }
 
@@ -198,6 +331,9 @@ extension ReactionView {
 // MARK: - Receive pan gesture
 extension ReactionView {
     func panned(gestureRecognizer: UIGestureRecognizer) -> CGPoint? {
+        if isSystemEmojiKeyboardMode {
+            return nil
+        }
         if gestureRecognizer.isChanged(){
             isPanChanged = true
         }
@@ -243,7 +379,7 @@ extension ReactionView {
     }
     
     private func checkButtonHighlight(gestureRecognizer: UIGestureRecognizer) -> CGPoint?{
-        guard isMoreButtonEnabled else {return nil}
+        guard isMoreButtonEnabled, !isSystemEmojiKeyboardMode else {return nil}
         let exactPanPoint = gestureRecognizer.location(in: moreButton)
         // i give some margin to the touch area so the emoji start highlighted before reaching its exact area
         let marginPanPoint = CGPoint(x: exactPanPoint.x, y: exactPanPoint.y - REACTION.TOUCH_AREA_MARGIN)
@@ -332,10 +468,8 @@ fileprivate extension UIButton {
         guard self.transform == .identity else {return}
         self.backgroundColor = .clear
         UIView.animate(withDuration: 0.15, delay: 0, options: [.curveLinear], animations: {
-            // Slight zoom and lift upward
-            self.transform = CGAffineTransform(scaleX: 1.5, y: 1.5).concatenating(
-                CGAffineTransform(translationX: 0, y: -25)
-            )
+            // Shrink in place while highlighted (match emoji cells)
+            self.transform = CGAffineTransform(scaleX: 0.8, y: 0.8)
         }, completion: nil)
     }
     

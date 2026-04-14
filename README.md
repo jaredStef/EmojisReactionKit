@@ -107,3 +107,7 @@ MIT License. See <a target="_blank" href="https://github.com/ikhaled-ali/EmojisR
 ## 😎 Author
 
 Made with ❤️ by iKʜAʟED〆
+Forked and improved by JaredStef
+- Added iOS 26+ Appearance
+- Added System Keyboard Picker for Additional Emojis
+- Improved animations

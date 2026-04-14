@@ -77,6 +77,21 @@ public class ReactionPreviewView: UIView {
     private let defaultMargin:CGFloat = 8
     
     weak var delegate: ReactionPreviewDelegate?
+
+    /// Hidden field used only to present the system keyboard in emoji mode.
+    private let emojiKeyboardField = EmojiKeyboardTextField()
+    /// While `true`, the action menu is collapsed and the emoji keyboard is intended to be visible.
+    private var menuCollapsedForEmojiKeyboard = false
+    private var isSystemEmojiKeyboardActive = false
+    /// Preserves the adjusted (safe-area corrected) container position while entering emoji keyboard mode.
+    private var keyboardCollapsedContainerOrigin: CGPoint?
+
+    private var shouldUseBackgroundBlur: Bool {
+        if #available(iOS 26.0, *) {
+            return false
+        }
+        return !UIAccessibility.isReduceTransparencyEnabled
+    }
     
     required init?(coder: NSCoder) {
         super.init(coder: coder)
@@ -118,9 +133,11 @@ public class ReactionPreviewView: UIView {
         
         self.setOriginalRect(view.convert(view.bounds, to: window))
         self.setSnapShot(view.snapshot())
+        self.configureSnapshotShadow()
         
         self.add(to: window)
         self.buildView()
+        self.setupEmojiKeyboardField()
         self.prepareLayout()
     }
     
@@ -161,6 +178,16 @@ public class ReactionPreviewView: UIView {
         self.originalRect = rect
         self.vibrate(at: originalRect?.origin)
     }
+
+    private func configureSnapshotShadow() {
+        snapshotView.layer.masksToBounds = false
+        snapshotView.layer.shadowColor = UIColor.black.cgColor
+        snapshotView.layer.shadowOpacity = 0.14
+        snapshotView.layer.shadowRadius = 12
+        snapshotView.layer.shadowOffset = CGSize(width: 0, height: 6)
+        snapshotView.layer.shouldRasterize = true
+        snapshotView.layer.rasterizationScale = UIScreen.main.scale
+    }
     
     private func layout(){
         guard var originalRect else {return}
@@ -171,7 +198,7 @@ public class ReactionPreviewView: UIView {
         // container initial frame
         container.frame = CGRect(x: 0, y: y, width: self.window?.bounds.width ?? 0, height: 0)
         
-        // Reaction view frame
+        // Reaction view frame (full width always; keyboard “pill shrink” is handled inside ReactionView so the more button does not move.)
         let reactionWidth = REACTION.getWidth(count: (_config.emojis?.count ?? 0) + (_config.moreButton ? 1 : 0)) + 16 // 16 is the spacing
         let xReaction = _config.startFrom.isLeading() ? originalRect.origin.x : originalRect.origin.x + originalRect.width - reactionWidth
         y = 0
@@ -182,28 +209,48 @@ public class ReactionPreviewView: UIView {
         let snapshotSize = getImageSize()
         let xSanpshot = isSnapshotResizedV ? ( _config.startFrom.isLeading() ? originalRect.origin.x : originalRect.origin.x + originalRect.width - snapshotSize.width) : originalRect.origin.x
         snapshotView.frame = CGRect(x: xSanpshot, y: y, width: snapshotSize.width, height: snapshotSize.height)
+        snapshotView.layer.shadowPath = UIBezierPath(roundedRect: snapshotView.bounds, cornerRadius: 12).cgPath
         
-        // Menu Frame
-        let xMenu = _config.startFrom.isLeading() ? originalRect.origin.x : originalRect.origin.x + originalRect.width - MENU.WIDTH
+        // Menu Frame (hidden while system emoji keyboard is open from "more")
+        if !menuCollapsedForEmojiKeyboard, visualEffectView != nil {
+            let xMenu = _config.startFrom.isLeading() ? originalRect.origin.x : originalRect.origin.x + originalRect.width - MENU.WIDTH
+            
+            let menuHeight = height()
+            // fisrt stage will draw the menu from the bottom
+            var yMenu = getMaxBottom() - menuHeight - getMinTop()
+            // here we are checking if we have space to move it to the bottom of snapshot
+            let diff = yMenu - snapshotView.bottom()
+            yMenu = diff > REACTION.MARGIN ? snapshotView.bottom() + REACTION.MARGIN : yMenu
+            
+            visualEffectView?.isHidden = false
+            visualEffectView?.isUserInteractionEnabled = true
+            visualEffectView?.frame = CGRect(x: xMenu, y: yMenu, width: MENU.WIDTH, height: menuHeight)
+            menuTableView?.frame = visualEffectView?.bounds ?? .zero
+        } else if menuCollapsedForEmojiKeyboard {
+            visualEffectView?.isHidden = true
+            visualEffectView?.isUserInteractionEnabled = false
+        }
         
-        let menuHeight = height()
-        // fisrt stage will draw the menu from the bottom
-        var yMenu = getMaxBottom() - menuHeight - getMinTop()
-        // here we are checking if we have space to move it to the bottom of snapshot
-        let diff = yMenu - snapshotView.bottom()
-        yMenu = diff > REACTION.MARGIN ? snapshotView.bottom() + REACTION.MARGIN : yMenu
+        container.frame.size.height = (menuCollapsedForEmojiKeyboard || visualEffectView == nil)
+            ? snapshotView.bottom()
+            : (visualEffectView?.bottom() ?? snapshotView.bottom())
         
-        visualEffectView?.frame = CGRect(x: xMenu, y: yMenu, width: MENU.WIDTH, height: menuHeight)
-        menuTableView?.frame = visualEffectView?.bounds ?? .zero
-        
-        container.frame.size.height = visualEffectView?.bottom() ?? snapshotView.bottom()
+        if menuCollapsedForEmojiKeyboard, let pinnedOrigin = keyboardCollapsedContainerOrigin {
+            container.frame.origin = pinnedOrigin
+        }
         
     }
     
     func dismiss(with action: UIAction? = nil, emoji: String? = nil, moreButton: Bool = false){
         guard !self.isDismissing else { return }
         self.isDismissing = true
+        self.emojiKeyboardField.resignFirstResponder()
+        self.isSystemEmojiKeyboardActive = false
+        self.menuCollapsedForEmojiKeyboard = false
+        self.keyboardCollapsedContainerOrigin = nil
+        self.blurBackgroundView.alpha = 1
         animator = UIViewPropertyAnimator(duration: 0.4, curve: .easeOut) { [weak self] in
+            self?.blurBackgroundView.backgroundColor = .clear
             self?.blurBackgroundView.effect = nil
         }
         self.animator?.startAnimation()
@@ -240,6 +287,12 @@ public class ReactionPreviewView: UIView {
             
             self.visualEffectView?.transform = CGAffineTransform(scaleX: 0.01, y: 0.01)
             self.visualEffectView?.alpha = 0
+            
+            // Fade the snapshot chrome back to clear on dismissal.
+            self.snapshotView.backgroundColor = .clear
+            self.snapshotView.layer.shadowOpacity = 0
+            self.snapshotView.layer.shadowRadius = 0
+            self.blurBackgroundView.alpha = 0
         }, completion: { _ in
             if self._config.hideTargetWhenReact {
                 self._hostingView?.alpha = self.initialAlpha ?? 1
@@ -282,10 +335,13 @@ public class ReactionPreviewView: UIView {
         delegate?.willReact?()
         
         animator = UIViewPropertyAnimator(duration: 0.4, curve: .linear) { [weak self] in
-            if !UIAccessibility.isReduceTransparencyEnabled {
-                self?.blurBackgroundView.effect = self?._theme.backgroundBlurEffectStyle
-            }else {
-                self?.blurBackgroundView.backgroundColor = self?._theme.backgroundFallbackColor
+            guard let self else { return }
+            if self.shouldUseBackgroundBlur {
+                self.blurBackgroundView.backgroundColor = nil
+                self.blurBackgroundView.effect = self._theme.backgroundBlurEffectStyle
+            } else {
+                self.blurBackgroundView.effect = nil
+                self.blurBackgroundView.backgroundColor = self._theme.backgroundFallbackColor
             }
         }
         
@@ -426,6 +482,9 @@ public class ReactionPreviewView: UIView {
     }
     
     @objc private func didTapView(){
+        if isSystemEmojiKeyboardActive {
+            emojiKeyboardField.resignFirstResponder()
+        }
         self.dismiss()
     }
     
@@ -441,6 +500,9 @@ public class ReactionPreviewView: UIView {
 
 extension ReactionPreviewView: UITableViewDelegate {
     public func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
+        if #available(iOS 26.0, *) {
+            return nil
+        }
         guard section != tableView.numberOfSections - 1 else { return nil }
 
         let footerView = UIView()
@@ -449,6 +511,9 @@ extension ReactionPreviewView: UITableViewDelegate {
     }
     
     public func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
+        if #available(iOS 26.0, *) {
+            return 0.0
+        }
         let sectionDividerHeight: CGFloat = 8.0
 
         // If it's the last section, don't show a divider, otherwise do
@@ -465,6 +530,9 @@ extension ReactionPreviewView: UITableViewDelegate {
 
 extension ReactionPreviewView : UIGestureRecognizerDelegate {
     public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        if isSystemEmojiKeyboardActive {
+            return !emojiKeyboardField.bounds.contains(touch.location(in: emojiKeyboardField))
+        }
         let isInTableView:Bool = (menuTableView?.bounds.contains(touch.location(in: menuTableView))) ?? false
         if let reactionView {
            return !isInTableView && !reactionView.bounds.contains(touch.location(in: reactionView))
@@ -544,7 +612,7 @@ extension ReactionPreviewView : ReactionViewDelegate {
     }
     
     func didSelectMoreButton() {
-        self.dismiss(moreButton: true)
+        beginSystemEmojiKeyboardFromMoreButton()
     }
 
 }
@@ -562,24 +630,44 @@ extension ReactionPreviewView {
     
     private func setupMenuView() {
         visualEffectView = UIVisualEffectView(effect: nil)
-        if !UIAccessibility.isReduceTransparencyEnabled {
+        if #available(iOS 26.0, *) {
+            let glassEffect = UIGlassEffect(style: .regular)
+            glassEffect.isInteractive = true
+            visualEffectView!.effect = glassEffect
+            visualEffectView!.backgroundColor = .clear
+        } else if !UIAccessibility.isReduceTransparencyEnabled {
             visualEffectView!.effect = _theme.menuBlurEffectStyle
-        }else {
+        } else {
             visualEffectView!.backgroundColor = _theme.menuBlurFallbackColor
         }
         visualEffectView!.layer.masksToBounds = true
-        visualEffectView!.layer.cornerRadius = 13.0
+        if #available(iOS 26.0, *) {
+            visualEffectView!.layer.cornerRadius = 28.0
+            visualEffectView!.layer.cornerCurve = .continuous
+        } else {
+            visualEffectView!.layer.cornerRadius = 13.0
+        }
         visualEffectView!.isUserInteractionEnabled = true
         visualEffectView!.alpha = 0
         
         menuTableView = UITableView(frame: .zero, style: .plain)
         menuTableView!.register(ReactionMenuTableViewCell.self, forCellReuseIdentifier: ReactionMenuTableViewCell.identifier)
-        menuTableView!.separatorInset = .zero
+        if #available(iOS 26.0, *) {
+            menuTableView!.separatorInset = UIEdgeInsets(top: 0, left: 52, bottom: 0, right: 18)
+        } else {
+            menuTableView!.separatorInset = .zero
+        }
+        menuTableView!.separatorColor = UIColor.clear
         menuTableView!.translatesAutoresizingMaskIntoConstraints = false
         menuTableView!.backgroundColor = .clear
         menuTableView!.isUserInteractionEnabled = true
         menuTableView!.isScrollEnabled = false
-        menuTableView!.verticalScrollIndicatorInsets = UIEdgeInsets(top: 13.0, left: 0.0, bottom: 13.0, right: 0.0)
+        if #available(iOS 26.0, *) {
+            menuTableView!.contentInset = .zero
+            menuTableView!.verticalScrollIndicatorInsets = UIEdgeInsets(top: 8.0, left: 0.0, bottom: 8.0, right: 0.0)
+        } else {
+            menuTableView!.verticalScrollIndicatorInsets = UIEdgeInsets(top: 13.0, left: 0.0, bottom: 13.0, right: 0.0)
+        }
         
         
         // Required to not get whacky spacing
@@ -589,7 +677,15 @@ extension ReactionPreviewView {
         
         // This hack still seems to be the best way to hide the last separator in a UITableView
         let fauxTableFooterView = UIView()
-        fauxTableFooterView.frame = CGRect(x: 0.0, y: 0.0, width: CGFloat.leastNormalMagnitude, height: CGFloat.leastNormalMagnitude)
+        if #available(iOS 26.0, *) {
+            let verticalInset: CGFloat = 6.0
+            let topPaddingView = UIView(frame: CGRect(x: 0.0, y: 0.0, width: 1.0, height: verticalInset))
+            topPaddingView.backgroundColor = .clear
+            menuTableView!.tableHeaderView = topPaddingView
+            fauxTableFooterView.frame = CGRect(x: 0.0, y: 0.0, width: 1.0, height: verticalInset)
+        } else {
+            fauxTableFooterView.frame = CGRect(x: 0.0, y: 0.0, width: CGFloat.leastNormalMagnitude, height: CGFloat.leastNormalMagnitude)
+        }
         menuTableView!.tableFooterView = fauxTableFooterView
         
         self.dataSource = makeDataSource()
@@ -617,7 +713,70 @@ extension ReactionPreviewView {
         tap.delegate = self
         self.addGestureRecognizer(tap)
     }
+
+    private func setupEmojiKeyboardField() {
+        emojiKeyboardField.onEmojiInserted = { [weak self] string in
+            guard let self, !string.isEmpty else { return }
+            guard string.containsOnlyEmoji else {
+                // Treat non-emoji keyboard output like a cancel action.
+                self.dismiss()
+                return
+            }
+            self.selectionGenerator?.selectionChanged()
+            self.dismiss(emoji: string)
+        }
+        addSubview(emojiKeyboardField)
+        emojiKeyboardField.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            emojiKeyboardField.widthAnchor.constraint(equalToConstant: 1),
+            emojiKeyboardField.heightAnchor.constraint(equalToConstant: 1),
+            emojiKeyboardField.leadingAnchor.constraint(equalTo: leadingAnchor),
+            emojiKeyboardField.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor)
+        ])
+    }
+
+    private func beginSystemEmojiKeyboardFromMoreButton() {
+        guard !isSystemEmojiKeyboardActive else { return }
+        isSystemEmojiKeyboardActive = true
+        keyboardCollapsedContainerOrigin = container.frame.origin
+        visualEffectView?.isUserInteractionEnabled = false
+
+        UIView.animate(
+            withDuration: 0.1,
+            delay: 0,
+            options: [.curveEaseInOut, .allowUserInteraction],
+            animations: {
+                self.reactionView?.setSuppressedEmojiCollectionForSystemKeyboard(true, animated: false)
+                self.visualEffectView?.alpha = 0
+                self.visualEffectView?.transform = CGAffineTransform(translationX: 0, y: -10).scaledBy(x: 0.96, y: 0.96)
+            },
+            completion: { _ in
+                self.menuCollapsedForEmojiKeyboard = true
+                self.visualEffectView?.transform = .identity
+                self.layout()
+                _ = self.emojiKeyboardField.becomeFirstResponder()
+                self.emojiKeyboardField.reloadInputViews()
+            }
+        )
+    }
     
+}
+
+private extension String {
+    /// Returns `true` only when all visible characters are emoji.
+    var containsOnlyEmoji: Bool {
+        !isEmpty && allSatisfy(\.isSingleEmojiCharacter)
+    }
+}
+
+private extension Character {
+    var isSingleEmojiCharacter: Bool {
+        // Multi-scalar clusters are typically composed emoji (ZWJ, skin tone, flags, etc.)
+        if unicodeScalars.count > 1 {
+            return unicodeScalars.contains { $0.properties.isEmoji }
+        }
+        return unicodeScalars.first?.properties.isEmojiPresentation == true
+    }
 }
 
 // MARK: - Helpers
