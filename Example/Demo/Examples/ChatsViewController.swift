@@ -13,6 +13,12 @@ class ChatsViewController: UIViewController, UITableViewDataSource, UITableViewD
 
     /// You have instance means you have control ;)
     private var reactionPreview: ReactionPreviewView?
+    private lazy var longPressGestureRecognizer: UILongPressGestureRecognizer = {
+        let gesture = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        gesture.minimumPressDuration = 0.35
+        gesture.cancelsTouchesInView = true
+        return gesture
+    }()
     
     private var messages: [Message] = [
         Message(text: "Hey there!", isIncoming: true),
@@ -65,6 +71,7 @@ class ChatsViewController: UIViewController, UITableViewDataSource, UITableViewD
         tableView.estimatedRowHeight = 44
         tableView.rowHeight = UITableView.automaticDimension
         tableView.backgroundColor = .clear
+        tableView.addGestureRecognizer(longPressGestureRecognizer)
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -86,12 +93,24 @@ class ChatsViewController: UIViewController, UITableViewDataSource, UITableViewD
         return cell
     }
     
-    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        guard let cell = tableView.cellForRow(at: indexPath) as? MessageCell else { return }
+    @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+        let location = gesture.location(in: tableView)
+        guard let indexPath = tableView.indexPathForRow(at: location),
+              let cell = tableView.cellForRow(at: indexPath) as? MessageCell else {
+            return
+        }
         
-        let reactConfig = ReactionConfig(itemIdentifier: indexPath, emojis: ["👍🏼", "😂", "❤️", "💻"], menu: ViewController.existingMenu, startFrom: cell.isIncoming ? .leading : .trailing)
-    
-        reactionPreview = cell.bubbleView.react(with: reactConfig, delegate: self)
+        if gesture.state == .began {
+            reactionPreview?.removeFromSuperview()
+            let reactConfig = ReactionConfig(
+                itemIdentifier: indexPath,
+                emojis: ["👍🏼", "😂", "❤️", "💻"],
+                menu: ViewController.existingMenu,
+                startFrom: cell.isIncoming ? .leading : .trailing,
+                continuedPanGesture: gesture
+            )
+            reactionPreview = cell.bubbleView.react(with: reactConfig, delegate: self)
+        }
     }
 }
 

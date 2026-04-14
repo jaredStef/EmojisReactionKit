@@ -9,6 +9,9 @@
 import UIKit
 
 class ReactionMenuTableViewCell: UITableViewCell {
+    /// Matches the iOS 26 menu container radius (28) minus the row inset (4).
+    private let selectionPillCornerRadius: CGFloat = 24.0
+
     var menuTitle: String = "" {
         didSet {
             menuTitleLabel.text = menuTitle
@@ -76,7 +79,7 @@ class ReactionMenuTableViewCell: UITableViewCell {
                 selectionPillView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
                 selectionPillView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4),
 
-                iconImageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 18),
+                iconImageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 22),
                 iconImageView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
                 iconImageView.widthAnchor.constraint(equalToConstant: 20),
                 iconImageView.heightAnchor.constraint(equalToConstant: 20),
@@ -130,7 +133,7 @@ class ReactionMenuTableViewCell: UITableViewCell {
     override func layoutSubviews() {
         super.layoutSubviews()
         if #available(iOS 26.0, *) {
-            selectionPillView.layer.cornerRadius = selectionPillView.bounds.height / 2
+            selectionPillView.layer.cornerRadius = selectionPillCornerRadius
         }
     }
 

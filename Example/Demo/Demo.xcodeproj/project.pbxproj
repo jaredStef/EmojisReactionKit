@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		2D27A01D2E019792001F12E4 /* EmojisReactionKit in Frameworks */ = {isa = PBXBuildFile; productRef = 2D27A01C2E019792001F12E4 /* EmojisReactionKit */; };
 		BA0FA5DB2F7EFA93008197C1 /* EmojisReactionKit in Frameworks */ = {isa = PBXBuildFile; productRef = BA0FA5DA2F7EFA93008197C1 /* EmojisReactionKit */; };
+		BA8083202F8E0F80000960FB /* EmojisReactionKit in Frameworks */ = {isa = PBXBuildFile; productRef = BA80831F2F8E0F80000960FB /* EmojisReactionKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -46,6 +47,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BA8083202F8E0F80000960FB /* EmojisReactionKit in Frameworks */,
 				2D27A01D2E019792001F12E4 /* EmojisReactionKit in Frameworks */,
 				BA0FA5DB2F7EFA93008197C1 /* EmojisReactionKit in Frameworks */,
 			);
@@ -94,6 +96,7 @@
 			packageProductDependencies = (
 				2D27A01C2E019792001F12E4 /* EmojisReactionKit */,
 				BA0FA5DA2F7EFA93008197C1 /* EmojisReactionKit */,
+				BA80831F2F8E0F80000960FB /* EmojisReactionKit */,
 			);
 			productName = Demo;
 			productReference = 2D279FF32E0196D8001F12E4 /* Demo.app */;
@@ -124,7 +127,7 @@
 			mainGroup = 2D279FEA2E0196D8001F12E4;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				BA0FA5D92F7EFA93008197C1 /* XCLocalSwiftPackageReference "../../../EmojisReactionKit-main" */,
+				BA80831E2F8E0F80000960FB /* XCLocalSwiftPackageReference "../../../EmojisReactionKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2D279FF42E0196D8001F12E4 /* Products */;
@@ -360,9 +363,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		BA0FA5D92F7EFA93008197C1 /* XCLocalSwiftPackageReference "../../../EmojisReactionKit-main" */ = {
+		BA80831E2F8E0F80000960FB /* XCLocalSwiftPackageReference "../../../EmojisReactionKit" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = "../../../EmojisReactionKit-main";
+			relativePath = ../../../EmojisReactionKit;
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -372,6 +375,10 @@
 			productName = EmojisReactionKit;
 		};
 		BA0FA5DA2F7EFA93008197C1 /* EmojisReactionKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = EmojisReactionKit;
+		};
+		BA80831F2F8E0F80000960FB /* EmojisReactionKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = EmojisReactionKit;
 		};

@@ -39,6 +39,8 @@ public class ReactionPreviewView: UIView {
     
     ///Used to power the "drag to select" functionality like the iOS version
     private let panGestureRecognizer: UIPanGestureRecognizer = UIPanGestureRecognizer()
+    /// The caller-owned recognizer (typically long press) that should continue driving selection updates.
+    private weak var continuedPanGestureRecognizer: UIGestureRecognizer?
     
     /// A blurred background view, applied only when Reduce Transparency is disabled in accessibility settings.
     private let blurBackgroundView: UIVisualEffectView = {
@@ -97,7 +99,9 @@ public class ReactionPreviewView: UIView {
         super.init(coder: coder)
     }
     
-    deinit {}
+    deinit {
+        self.detachFromContinuedPanGesture()
+    }
     
     init(_ view: UIView, with config: ReactionConfig, theme: ReactionTheme? = .default) {
         super.init(frame: .zero)
@@ -125,7 +129,7 @@ public class ReactionPreviewView: UIView {
         if config.enablePanGesture {
             self.enablePanGesture()
             if let continuedPanGesture = config.continuedPanGesture {
-                self.panned(gestureRecognizer: continuedPanGesture)
+                self.attachToContinuedPanGesture(continuedPanGesture)
             }
         }
         
@@ -244,6 +248,7 @@ public class ReactionPreviewView: UIView {
     func dismiss(with action: UIAction? = nil, emoji: String? = nil, moreButton: Bool = false){
         guard !self.isDismissing else { return }
         self.isDismissing = true
+        self.detachFromContinuedPanGesture()
         self.emojiKeyboardField.resignFirstResponder()
         self.isSystemEmojiKeyboardActive = false
         self.menuCollapsedForEmojiKeyboard = false
@@ -524,6 +529,16 @@ extension ReactionPreviewView: UITableViewDelegate {
         selectionGenerator?.selectionChanged()
         self.dismiss(with: getActionAtIndexPath(indexPath))
     }
+    
+    public func tableView(_ tableView: UITableView, didHighlightRowAt indexPath: IndexPath) {
+        guard let cell = tableView.cellForRow(at: indexPath) as? ReactionMenuTableViewCell else { return }
+        cell.highlight(true, animated: true)
+    }
+    
+    public func tableView(_ tableView: UITableView, didUnhighlightRowAt indexPath: IndexPath) {
+        guard let cell = tableView.cellForRow(at: indexPath) as? ReactionMenuTableViewCell else { return }
+        cell.highlight(false, animated: true)
+    }
 }
 
 // MARK: - UIGestureRecognizerDelegate
@@ -588,6 +603,11 @@ extension ReactionPreviewView {
         if let point = reactionView?.panned(gestureRecognizer: gestureRecognizer){
             self.onSelectionChanged(at: point)
         }
+    }
+    
+    /// Continues drag-to-select while the presenting long press is still active.
+    @objc private func continuedPanGestureChanged(_ gestureRecognizer: UIGestureRecognizer) {
+        self.panned(gestureRecognizer: gestureRecognizer)
     }
     
     private func highlightCell(_ bool: Bool, at indexPath: IndexPath){
@@ -705,6 +725,19 @@ extension ReactionPreviewView {
         panGestureRecognizer.addTarget(self, action: #selector(panned(gestureRecognizer:)))
         panGestureRecognizer.cancelsTouchesInView = false
          self.container.addGestureRecognizer(panGestureRecognizer)
+    }
+    
+    private func attachToContinuedPanGesture(_ gestureRecognizer: UIGestureRecognizer) {
+        self.detachFromContinuedPanGesture()
+        self.continuedPanGestureRecognizer = gestureRecognizer
+        gestureRecognizer.addTarget(self, action: #selector(continuedPanGestureChanged(_:)))
+        // Process current touch location immediately so highlight begins without waiting for next state change.
+        self.panned(gestureRecognizer: gestureRecognizer)
+    }
+    
+    private func detachFromContinuedPanGesture() {
+        self.continuedPanGestureRecognizer?.removeTarget(self, action: #selector(continuedPanGestureChanged(_:)))
+        self.continuedPanGestureRecognizer = nil
     }
     
     private func addTapToDismissGesture() {
