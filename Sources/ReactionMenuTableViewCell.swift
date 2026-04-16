@@ -185,6 +185,11 @@ class ReactionMenuTableViewCell: UITableViewCell {
     }
 
     private func updateSelectionPill(_ isVisible: Bool, animated: Bool) {
+        if #available(iOS 26.0, *) {
+            // Row chrome is driven by ``ReactionPreviewView``'s sliding overlay to match system menus.
+            selectionPillView.alpha = 0
+            return
+        }
         let changes = {
             self.selectionPillView.alpha = isVisible ? 1 : 0
         }

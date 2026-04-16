@@ -334,10 +334,16 @@ extension ReactionView {
         if isSystemEmojiKeyboardMode {
             return nil
         }
-        if gestureRecognizer.isChanged(){
+        let isFinished = gestureRecognizer.isFinished()
+        if gestureRecognizer.state == .began || gestureRecognizer.isChanged() {
             isPanChanged = true
         }
-        guard isPanChanged else { return nil } // pan should be changed one time before proceeding
+        if isFinished {
+            defer { isPanChanged = false }
+        }
+        // Normal flow requires at least one begin/change. But still allow terminal `.ended` to pick
+        // the emoji under the finger when the touch started elsewhere (cell/menu) and ended on emoji.
+        guard isPanChanged || isFinished else { return nil }
         let exactPanPoint = gestureRecognizer.location(in: collectionView)
         // i give some margin to the touch area so the emoji start highlighted before reaching its exact area
         let marginPanPoint = CGPoint(x: exactPanPoint.x, y: exactPanPoint.y - REACTION.TOUCH_AREA_MARGIN)
@@ -351,12 +357,15 @@ extension ReactionView {
             return checkButtonHighlight(gestureRecognizer: gestureRecognizer)
         }
         highlightButton(false)
-        if gestureRecognizer.isFinished(), currentlyHighlightedIndex == nil {
-            return nil
+        if isFinished, currentlyHighlightedIndex == nil {
+            // Pan can begin late (or only deliver an end state) when the user presses/holds with
+            // little movement. In that case, still treat release on an emoji as a selection.
+            selectEmoji(atIndex: indexPath)
+            return exactPanPoint
         }
         
         guard indexPath != currentlyHighlightedIndex else {
-            if gestureRecognizer.isFinished() {
+            if isFinished {
                 highlightCell(false, at: indexPath)
                 selectEmoji(atIndex: indexPath)
             }
@@ -369,7 +378,7 @@ extension ReactionView {
         
         self.currentlyHighlightedIndex = indexPath
         
-        if gestureRecognizer.isFinished() {
+        if isFinished {
             // Treat is as a tap
             selectEmoji(atIndex: indexPath)
         } else {

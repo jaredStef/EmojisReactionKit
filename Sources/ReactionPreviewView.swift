@@ -59,6 +59,13 @@ public class ReactionPreviewView: UIView {
     //MARK: - Custom propertis to be used inside the class
     /// A property to save the last highlighted index in menuTableView - used for pan
     private var currentlyHighlightedIndex:IndexPath?
+
+    /// iOS 26: one shared pill that slides between rows (native-style). Created in ``setupMenuView()``.
+    private var menuRowSelectionOverlayView: UIView?
+    /// Debounces clearing the overlay when ``UITableView`` unhighlights before the next row highlights.
+    private var menuOverlayRemovalWorkItem: DispatchWorkItem?
+    /// Row the sliding menu pill is currently associated with (table delegate + pan).
+    private var menuOverlayDisplayIndexPath: IndexPath?
     /// Check the state where the targeted view is resized vertically
     private var isSnapshotResizedV: Bool = false
     /// Check the state where the targeted view is resized horizontally
@@ -242,12 +249,21 @@ public class ReactionPreviewView: UIView {
         if menuCollapsedForEmojiKeyboard, let pinnedOrigin = keyboardCollapsedContainerOrigin {
             container.frame.origin = pinnedOrigin
         }
-        
+
+        if #available(iOS 26.0, *) {
+            syncMenuOverlayFrameAfterLayout()
+        }
     }
     
     func dismiss(with action: UIAction? = nil, emoji: String? = nil, moreButton: Bool = false){
         guard !self.isDismissing else { return }
         self.isDismissing = true
+        menuOverlayRemovalWorkItem?.cancel()
+        menuOverlayRemovalWorkItem = nil
+        if #available(iOS 26.0, *) {
+            menuOverlayDisplayIndexPath = nil
+            menuRowSelectionOverlayView?.alpha = 0
+        }
         self.detachFromContinuedPanGesture()
         self.emojiKeyboardField.resignFirstResponder()
         self.isSystemEmojiKeyboardActive = false
@@ -551,12 +567,31 @@ extension ReactionPreviewView: UITableViewDelegate {
     }
     
     public func tableView(_ tableView: UITableView, didHighlightRowAt indexPath: IndexPath) {
-        guard let action = getActionAtIndexPath(indexPath), !ReactionMenuLabel.isLabel(action),
-              let cell = tableView.cellForRow(at: indexPath) as? ReactionMenuTableViewCell else { return }
+        guard let action = getActionAtIndexPath(indexPath), !ReactionMenuLabel.isLabel(action) else { return }
+        if #available(iOS 26.0, *) {
+            menuOverlayRemovalWorkItem?.cancel()
+            menuOverlayRemovalWorkItem = nil
+            let from = menuOverlayDisplayIndexPath
+            applyMenuRowOverlayHighlight(from: from, to: indexPath, slideAnimated: from != nil && from != indexPath)
+            return
+        }
+        guard let cell = tableView.cellForRow(at: indexPath) as? ReactionMenuTableViewCell else { return }
         cell.highlight(true, animated: true)
     }
     
     public func tableView(_ tableView: UITableView, didUnhighlightRowAt indexPath: IndexPath) {
+        if #available(iOS 26.0, *) {
+            let captured = indexPath
+            menuOverlayRemovalWorkItem?.cancel()
+            let item = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                guard self.menuOverlayDisplayIndexPath == captured else { return }
+                self.applyMenuRowOverlayHighlight(from: captured, to: nil, slideAnimated: false)
+            }
+            menuOverlayRemovalWorkItem = item
+            DispatchQueue.main.async(execute: item)
+            return
+        }
         guard let cell = tableView.cellForRow(at: indexPath) as? ReactionMenuTableViewCell else { return }
         cell.highlight(false, animated: true)
     }
@@ -569,11 +604,36 @@ extension ReactionPreviewView : UIGestureRecognizerDelegate {
         if isSystemEmojiKeyboardActive {
             return !emojiKeyboardField.bounds.contains(touch.location(in: emojiKeyboardField))
         }
+        // Let the container pan see touches that begin on the menu so drag-to-select works like the
+        // system UI. Keep emoji-strip touches enabled too so emoji hold/drag highlighting starts
+        // immediately when the finger begins on an emoji.
+        if gestureRecognizer === panGestureRecognizer {
+            return true
+        }
         let isInTableView:Bool = (menuTableView?.bounds.contains(touch.location(in: menuTableView))) ?? false
         if let reactionView {
            return !isInTableView && !reactionView.bounds.contains(touch.location(in: reactionView))
         }
         return !isInTableView
+    }
+
+    public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === panGestureRecognizer else { return false }
+        if let tv = menuTableView {
+            var node: UIView? = otherGestureRecognizer.view
+            while let current = node {
+                if current === tv { return true }
+                node = current.superview
+            }
+        }
+        if let reactionView {
+            var node: UIView? = otherGestureRecognizer.view
+            while let current = node {
+                if current === reactionView { return true }
+                node = current.superview
+            }
+        }
+        return false
     }
 }
 
@@ -586,7 +646,7 @@ extension ReactionPreviewView {
            let action = getActionAtIndexPath(indexPath),
            ReactionMenuLabel.isLabel(action) {
             if let currentlyHighlightedIndex {
-                highlightCell(false, at: currentlyHighlightedIndex)
+                updatePanMenuHighlight(from: currentlyHighlightedIndex, to: nil, gestureRecognizer: gestureRecognizer)
             }
             self.currentlyHighlightedIndex = nil
             return
@@ -594,7 +654,7 @@ extension ReactionPreviewView {
         guard let indexPath = menuTableView?.indexPathForRow(at: panPoint) else {
             // If we pan outside the table and there's a cell selected, unselect it
             if let currentlyHighlightedIndex  {
-                highlightCell(false, at: currentlyHighlightedIndex)
+                updatePanMenuHighlight(from: currentlyHighlightedIndex, to: nil, gestureRecognizer: gestureRecognizer)
             }
             if let point = reactionView?.panned(gestureRecognizer: gestureRecognizer){
                 self.onSelectionChanged(at: point)
@@ -609,23 +669,21 @@ extension ReactionPreviewView {
         
         guard indexPath != currentlyHighlightedIndex else {
             if gestureRecognizer.isFinished() {
-                highlightCell(false, at: indexPath)
+                updatePanMenuHighlight(from: indexPath, to: nil, gestureRecognizer: gestureRecognizer)
                 self.dismiss(with: getActionAtIndexPath(indexPath))
             }
             return
         }
         
-        if let currentlyHighlightedIndex  {
-            highlightCell(false, at: currentlyHighlightedIndex)
-        }
+        let previousHighlight = currentlyHighlightedIndex
         self.onSelectionChanged(at: panPoint)
         self.currentlyHighlightedIndex = indexPath
         
         if gestureRecognizer.isFinished() {
-            // Treat is as a tap
+            updatePanMenuHighlight(from: previousHighlight, to: nil, gestureRecognizer: gestureRecognizer)
             self.dismiss(with: getActionAtIndexPath(indexPath))
         } else {
-            highlightCell(true, at: indexPath)
+            updatePanMenuHighlight(from: previousHighlight, to: indexPath, gestureRecognizer: gestureRecognizer)
         }
     }
     
@@ -643,6 +701,22 @@ extension ReactionPreviewView {
     private func highlightCell(_ bool: Bool, at indexPath: IndexPath){
         guard let cell = self.menuTableView?.cellForRow(at: indexPath) as? ReactionMenuTableViewCell else { return }
         cell.highlight(bool, animated: false)
+    }
+
+    private func updatePanMenuHighlight(from oldIndex: IndexPath?, to newIndex: IndexPath?, gestureRecognizer: UIGestureRecognizer) {
+        if #available(iOS 26.0, *) {
+            menuOverlayRemovalWorkItem?.cancel()
+            menuOverlayRemovalWorkItem = nil
+            let slide = oldIndex != nil && newIndex != nil && oldIndex != newIndex
+            applyMenuRowOverlayHighlight(from: oldIndex, to: newIndex, slideAnimated: slide)
+            return
+        }
+        if let oldIndex {
+            highlightCell(false, at: oldIndex)
+        }
+        if let newIndex, !gestureRecognizer.isFinished() {
+            highlightCell(true, at: newIndex)
+        }
     }
     
     private func onSelectionChanged(at point: CGPoint){
@@ -748,6 +822,19 @@ extension ReactionPreviewView {
         self.dataSource = makeDataSource()
         menuTableView!.delegate = self
         self.addInitialData()
+
+        if #available(iOS 26.0, *) {
+            let pill = UIView()
+            pill.translatesAutoresizingMaskIntoConstraints = true
+            pill.isUserInteractionEnabled = false
+            pill.backgroundColor = UIColor.secondarySystemFill.withAlphaComponent(0.14)
+            pill.layer.masksToBounds = true
+            pill.layer.cornerCurve = .circular
+            pill.alpha = 0
+            visualEffectView!.contentView.addSubview(pill)
+            visualEffectView!.contentView.bringSubviewToFront(pill)
+            menuRowSelectionOverlayView = pill
+        }
     }
     
     private func enableFeedback() {
@@ -870,5 +957,63 @@ extension ReactionPreviewView {
     
     private func getActionAtIndexPath(_ indexPath: IndexPath) -> UIAction? {
         return (menuTableView?.dataSource as? UITableViewDiffableDataSource<UIMenu, UIAction>)?.itemIdentifier(for: indexPath)
+    }
+
+    @available(iOS 26.0, *)
+    private func rectForMenuRowHighlightOverlay(at indexPath: IndexPath) -> CGRect? {
+        guard let tv = menuTableView, let host = visualEffectView?.contentView else { return nil }
+        let rect = tv.rectForRow(at: indexPath)
+        guard rect.height > 0, !rect.isInfinite, !rect.isNull else { return nil }
+        let converted = tv.convert(rect, to: host)
+        let sideInset: CGFloat = 6
+        return converted.insetBy(dx: sideInset, dy: 0)
+    }
+
+    @available(iOS 26.0, *)
+    private func syncMenuOverlayFrameAfterLayout() {
+        guard let pill = menuRowSelectionOverlayView, pill.alpha > 0.01,
+              let idx = menuOverlayDisplayIndexPath,
+              let frame = rectForMenuRowHighlightOverlay(at: idx) else { return }
+        pill.frame = frame
+        pill.layer.cornerRadius = max(1, frame.height / 2)
+    }
+
+    @available(iOS 26.0, *)
+    private func applyMenuRowOverlayHighlight(from oldIndex: IndexPath?, to newIndex: IndexPath?, slideAnimated: Bool) {
+        guard let pill = menuRowSelectionOverlayView else { return }
+        menuOverlayRemovalWorkItem?.cancel()
+        menuOverlayRemovalWorkItem = nil
+
+        if let newIndex {
+            guard let targetFrame = rectForMenuRowHighlightOverlay(at: newIndex) else { return }
+            menuOverlayDisplayIndexPath = newIndex
+            let canSlide = slideAnimated && pill.alpha > 0.05 && oldIndex != nil && oldIndex != newIndex
+            if canSlide, let old = oldIndex, let oldFrame = rectForMenuRowHighlightOverlay(at: old) {
+                pill.frame = oldFrame
+                pill.layer.cornerRadius = max(1, oldFrame.height / 2)
+                pill.alpha = 1
+                UIView.animate(
+                    withDuration: 0.34,
+                    delay: 0,
+                    usingSpringWithDamping: 0.88,
+                    initialSpringVelocity: 0.38,
+                    options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]
+                ) {
+                    pill.frame = targetFrame
+                    pill.layer.cornerRadius = max(1, targetFrame.height / 2)
+                }
+            } else {
+                UIView.performWithoutAnimation {
+                    pill.frame = targetFrame
+                    pill.layer.cornerRadius = max(1, targetFrame.height / 2)
+                }
+                pill.alpha = 1
+            }
+        } else {
+            menuOverlayDisplayIndexPath = nil
+            UIView.animate(withDuration: 0.14, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
+                pill.alpha = 0
+            }
+        }
     }
 }
