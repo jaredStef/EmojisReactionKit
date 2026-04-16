@@ -82,12 +82,22 @@ extension UIView {
     }
     
     @objc public func snapshot() -> UIImage {
-        guard let screen = self.window?.screen else {return UIImage()}
-        UIGraphicsBeginImageContextWithOptions(self.bounds.size, false, screen.scale)
-        layer.render(in: UIGraphicsGetCurrentContext()!)
-        let image = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-        return image ?? UIImage()
+        guard bounds.width > 0, bounds.height > 0 else { return UIImage() }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = window?.screen.scale ?? UIScreen.main.scale
+        // SwiftUI-hosted views can render as a black rectangle when captured in an opaque context.
+        format.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: bounds.size, format: format)
+
+        return renderer.image { context in
+            UIColor.clear.setFill()
+            context.fill(bounds)
+            // `drawHierarchy` captures SwiftUI-hosted UIView content more reliably than `layer.render`.
+            let drewHierarchy = drawHierarchy(in: bounds, afterScreenUpdates: true)
+            if !drewHierarchy {
+                layer.render(in: context.cgContext)
+            }
+        }
     }
     
     ///

@@ -155,6 +155,10 @@ public class ReactionPreviewView: UIView {
     private func buildView() {
         self.addSubview(blurBackgroundView)
         self.addSubview(container)
+        // Keep the lifted message/menu stack above the dim layer in all host environments (UIKit/SwiftUI).
+        blurBackgroundView.layer.zPosition = 0
+        container.layer.zPosition = 1
+        self.bringSubviewToFront(container)
         if let reactionView {
             container.addSubview(reactionView)
         }
@@ -430,6 +434,7 @@ public class ReactionPreviewView: UIView {
         self.reactionView?.startAnimating()
         self.visualEffectView?.animateScaleAndFadeIn(startingFrom:  CGAffineTransform(scaleX: 0.2, y: 0.2), startFrom: _config.startFrom, isFromTop: true)
     }
+
     
     private func getImageSize() -> CGSize {
         guard let image = snapshotView.image else {return .zero}
@@ -784,10 +789,12 @@ extension ReactionPreviewView {
             let iconLeadingInset = (24.0 * 100.0 / 80.0).rounded()
             let iconToTitleSpacing = (6.0 * 57.0 / 33.0).rounded()
             menuTableView!.separatorInset = UIEdgeInsets(top: 0, left: iconLeadingInset + 20 + iconToTitleSpacing, bottom: 0, right: 14)
+            menuTableView!.separatorColor = UIColor.clear
         } else {
             menuTableView!.separatorInset = .zero
+            // Keep classic section separators visible on iOS 18 and earlier.
+            menuTableView!.separatorColor = UIColor(white: 0.0, alpha: 0.16)
         }
-        menuTableView!.separatorColor = UIColor.clear
         menuTableView!.translatesAutoresizingMaskIntoConstraints = false
         menuTableView!.backgroundColor = .clear
         menuTableView!.isUserInteractionEnabled = true
@@ -859,8 +866,10 @@ extension ReactionPreviewView {
         self.detachFromContinuedPanGesture()
         self.continuedPanGestureRecognizer = gestureRecognizer
         gestureRecognizer.addTarget(self, action: #selector(continuedPanGestureChanged(_:)))
-        // Process current touch location immediately so highlight begins without waiting for next state change.
-        self.panned(gestureRecognizer: gestureRecognizer)
+        if #available(iOS 26.0, *) {
+            // iOS 26 tracks initial long-press position cleanly for immediate highlight.
+            self.panned(gestureRecognizer: gestureRecognizer)
+        }
     }
     
     private func detachFromContinuedPanGesture() {

@@ -22,6 +22,7 @@ class ReactionView: UIView {
     private var currentlyHighlightedIndex:IndexPath?
     private var isAnimationDone:Bool = false
     private var isPanChanged = false
+    private var pendingEntranceAnimationIndices: Set<Int> = []
     /// When `true`, the quick emoji strip is hidden for the system emoji keyboard; pan and duplicate more taps are ignored.
     private var isSystemEmojiKeyboardMode = false
     
@@ -233,17 +234,20 @@ class ReactionView: UIView {
     deinit{}
     
     @objc private func didClickButton() {
-        guard !isSystemEmojiKeyboardMode else { return }
+        guard !isSystemEmojiKeyboardMode, isAnimationDone else { return }
         self.delegate?.didSelectMoreButton()
     }
     
     func startAnimating() {
+        isAnimationDone = false
+        pendingEntranceAnimationIndices.removeAll()
         guard !direction.isCenter(), isAnimationEnabled else {
             if isMoreButtonEnabled {
                 self.moreButton.transform = .identity
                 self.moreButton.alpha = 1
             }
             self.loadData()
+            isAnimationDone = true
             return
         }
         if isMoreButtonEnabled {
@@ -252,7 +256,6 @@ class ReactionView: UIView {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             self.loadData()
         }
-        
     }
     
     func setSuppressedEmojiCollectionForSystemKeyboard(_ suppressed: Bool, animated: Bool) {
@@ -324,6 +327,10 @@ class ReactionView: UIView {
 extension ReactionView {
     func loadData(){
         self.emojis = _emojis
+        if !withoutAnimation() {
+            pendingEntranceAnimationIndices = Set(0..<emojis.count)
+            isAnimationDone = emojis.isEmpty
+        }
         self.collectionView.reloadData()
     }
 }
@@ -388,7 +395,7 @@ extension ReactionView {
     }
     
     private func checkButtonHighlight(gestureRecognizer: UIGestureRecognizer) -> CGPoint?{
-        guard isMoreButtonEnabled, !isSystemEmojiKeyboardMode else {return nil}
+        guard isMoreButtonEnabled, !isSystemEmojiKeyboardMode, isAnimationDone else {return nil}
         let exactPanPoint = gestureRecognizer.location(in: moreButton)
         // i give some margin to the touch area so the emoji start highlighted before reaching its exact area
         let marginPanPoint = CGPoint(x: exactPanPoint.x, y: exactPanPoint.y - REACTION.TOUCH_AREA_MARGIN)
@@ -417,8 +424,23 @@ extension ReactionView {
     }
     
     private func selectEmoji(atIndex indexPath: IndexPath){
+        guard isAnimationDone else { return }
         let emoji = emojis[indexPath.item]
         self.delegate?.didSelectEmoji(emoji)
+    }
+
+    private func animateTapSelectionAndSelect(at indexPath: IndexPath) {
+        guard isAnimationDone else { return }
+        guard let cell = collectionView.cellForItem(at: indexPath) as? EmojiCellView else {
+            selectEmoji(atIndex: indexPath)
+            return
+        }
+        cell.animate()
+        UIView.animate(withDuration: 0.12, delay: 0, options: [.curveEaseOut]) {
+            cell.emojiLabel.transform = CGAffineTransform(scaleX: 0.72, y: 0.72)
+        } completion: { [weak self] _ in
+            self?.selectEmoji(atIndex: indexPath)
+        }
     }
 }
 
@@ -442,22 +464,24 @@ extension ReactionView: UICollectionViewDataSource, UICollectionViewDelegate {
     }
     
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        selectEmoji(atIndex: indexPath)
+        guard isAnimationDone else { return }
+        animateTapSelectionAndSelect(at: indexPath)
     }
     
     func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
         if !withoutAnimation() {
             let delay = direction.isLeading() ? 0.03 * Double(indexPath.item) : 0.03 * Double(emojis.count - 1 - indexPath.item)
-            cell.contentView.zoomInBounce(delay: delay)
+            cell.contentView.zoomInBounce(delay: delay) { [weak self] _ in
+                guard let self else { return }
+                self.pendingEntranceAnimationIndices.remove(indexPath.item)
+                if self.pendingEntranceAnimationIndices.isEmpty {
+                    self.isAnimationDone = true
+                }
+            }
         }else {
             cell.contentView.alpha = 1
             cell.contentView.transform = .identity
         }
-    }
-    
-    func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard !withoutAnimation(), scrollView == collectionView else {return}
-        isAnimationDone = true
     }
     
     private func withoutAnimation() -> Bool {
