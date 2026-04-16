@@ -113,7 +113,13 @@ class ReactionView: UIView {
     
     init(_ config: ReactionConfig) {
         super.init(frame: .zero)
-        self._emojis = config.emojis!
+        let baseEmojis = config.emojis ?? []
+        if let selected = config.selectedEmoji, !selected.isEmpty, !baseEmojis.contains(selected) {
+            self._emojis = baseEmojis + [selected]
+        } else {
+            self._emojis = baseEmojis
+        }
+        self.selectedEmoji = config.selectedEmoji
         self.direction = config.startFrom
         self.isAnimationEnabled = config.emojiEnteranceAnimated
         self.isMoreButtonEnabled = config.moreButton

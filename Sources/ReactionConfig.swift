@@ -19,6 +19,10 @@ public struct ReactionConfig {
     /// - Note: Displays up to 5–6 emojis before enabling horizontal scrolling.
     public let emojis: [String]?
     
+    /// Currently selected user emoji (if any).
+    /// When this emoji is not part of `emojis`, it is injected before the trailing "more" button.
+    public let selectedEmoji: String?
+    
     /// Decide if you want to enable emoji entrance animation or not
     /// - Important: Applicable only for `ReactionDirection.leading` and `ReactionDirection.trailing`
     public let emojiEnteranceAnimated:Bool
@@ -52,9 +56,10 @@ public struct ReactionConfig {
     /// hide the target view when reaction done and show it again after dismiss
     public let hideTargetWhenReact:Bool
     
-    public init(itemIdentifier: Any? = nil, emojis: [String]? = nil, moreButton: Bool = true, menu: UIMenu? = nil, startFrom: ReactionDirection = .center, enableFeedbackGeneration: Bool = true, enablePanGesture: Bool = true, hideTargetWhenReact: Bool = true, continuedPanGesture: UIGestureRecognizer? = nil, emojiEnteranceAnimated: Bool = true) {
+    public init(itemIdentifier: Any? = nil, emojis: [String]? = nil, selectedEmoji: String? = nil, moreButton: Bool = true, menu: UIMenu? = nil, startFrom: ReactionDirection = .center, enableFeedbackGeneration: Bool = true, enablePanGesture: Bool = true, hideTargetWhenReact: Bool = true, continuedPanGesture: UIGestureRecognizer? = nil, emojiEnteranceAnimated: Bool = true) {
         self.itemIdentifier = itemIdentifier
         self.emojis = emojis
+        self.selectedEmoji = selectedEmoji
         self.moreButton = moreButton
         self.menu = menu
         self.startFrom = startFrom

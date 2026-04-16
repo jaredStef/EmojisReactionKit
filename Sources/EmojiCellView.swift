@@ -90,7 +90,15 @@ class EmojiCellView: UICollectionViewCell {
         let isSelected = emoji == selectedEmoji
         
         emojiLabel.text = emoji
-        
-        selectedView.backgroundColor = isSelected ? .systemGray : .clear
+        emojiLabel.textColor = isSelected ? .white : .label
+        if isSelected {
+            if #available(iOS 15.0, *) {
+                selectedView.backgroundColor = .tintColor
+            } else {
+                selectedView.backgroundColor = .systemBlue
+            }
+        } else {
+            selectedView.backgroundColor = .clear
+        }
     }
 }
