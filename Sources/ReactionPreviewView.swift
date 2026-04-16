@@ -514,6 +514,15 @@ extension ReactionPreviewView: UITableViewDelegate {
         return !ReactionMenuLabel.isLabel(action)
     }
 
+    public func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        guard tableView === menuTableView else { return UITableView.automaticDimension }
+        if #available(iOS 26.0, *) {
+            // Row height: native 79px / ours 66px on 38pt baseline, then native 74px / ours 83px inter-row tweak.
+            return (((38.0 * 79.0 / 66.0) * 74.0 / 83.0).rounded())
+        }
+        return UITableView.automaticDimension
+    }
+
     public func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
         if #available(iOS 26.0, *) {
             return nil
@@ -529,7 +538,7 @@ extension ReactionPreviewView: UITableViewDelegate {
         if #available(iOS 26.0, *) {
             return 0.0
         }
-        let sectionDividerHeight: CGFloat = 8.0
+        let sectionDividerHeight: CGFloat = 4.0
 
         // If it's the last section, don't show a divider, otherwise do
         return section == tableView.numberOfSections - 1 ? 0.0 : sectionDividerHeight
@@ -693,8 +702,14 @@ extension ReactionPreviewView {
         
         menuTableView = UITableView(frame: .zero, style: .plain)
         menuTableView!.register(ReactionMenuTableViewCell.self, forCellReuseIdentifier: ReactionMenuTableViewCell.identifier)
+        if #available(iOS 15.0, *) {
+            menuTableView!.sectionHeaderTopPadding = 0
+        }
         if #available(iOS 26.0, *) {
-            menuTableView!.separatorInset = UIEdgeInsets(top: 0, left: 52, bottom: 0, right: 18)
+            // Align separator with text column (same insets as ReactionMenuTableViewCell iOS 26).
+            let iconLeadingInset = (24.0 * 100.0 / 80.0).rounded()
+            let iconToTitleSpacing = (6.0 * 57.0 / 33.0).rounded()
+            menuTableView!.separatorInset = UIEdgeInsets(top: 0, left: iconLeadingInset + 20 + iconToTitleSpacing, bottom: 0, right: 14)
         } else {
             menuTableView!.separatorInset = .zero
         }
@@ -719,7 +734,8 @@ extension ReactionPreviewView {
         // This hack still seems to be the best way to hide the last separator in a UITableView
         let fauxTableFooterView = UIView()
         if #available(iOS 26.0, *) {
-            let verticalInset: CGFloat = 6.0
+            // Top/bottom chrome vs native (screenshot ratio native 70px / ours 50px) applied to prior 6pt baseline.
+            let verticalInset: CGFloat = (6.0 * 70.0 / 50.0).rounded()
             let topPaddingView = UIView(frame: CGRect(x: 0.0, y: 0.0, width: 1.0, height: verticalInset))
             topPaddingView.backgroundColor = .clear
             menuTableView!.tableHeaderView = topPaddingView

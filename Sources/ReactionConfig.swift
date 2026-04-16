@@ -70,7 +70,7 @@ public struct ReactionConfig {
 public struct ReactionTheme {
     
     /// default values
-    @MainActor public static let `default` = ReactionTheme(backgroundFallbackColor: .black.withAlphaComponent(0.1), backgroundBlurEffectStyle: UIBlurEffect(style: .regular), reactionBackgroundColor: .systemBackground, moreButtonIcon: .init(systemName: "face.smiling") ?? .add, menuBlurEffectStyle: UIBlurEffect(style: .systemMaterial), menuBlurFallbackColor: .secondarySystemBackground)
+    @MainActor public static let `default` = ReactionTheme(backgroundFallbackColor: .black.withAlphaComponent(0.16), backgroundBlurEffectStyle: UIBlurEffect(style: .regular), reactionBackgroundColor: .systemBackground, moreButtonIcon: .init(systemName: "face.smiling") ?? .add, menuBlurEffectStyle: UIBlurEffect(style: .systemMaterial), menuBlurFallbackColor: .secondarySystemBackground)
     
     /// The background color of the reaction component when "Reduce Transparency" is enabled in accessibility settings.
     public let backgroundFallbackColor: UIColor
