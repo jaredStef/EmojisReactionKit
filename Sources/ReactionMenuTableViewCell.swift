@@ -19,10 +19,14 @@ class ReactionMenuTableViewCell: UITableViewCell {
     }
     
     var isDestructive: Bool = false {
+        didSet { applyMenuRowAppearance() }
+    }
+
+    /// Informational row (``ReactionMenuLabel``); not highlighted like a button.
+    var isMenuLabel: Bool = false {
         didSet {
-            let color: UIColor = isDestructive ? .systemRed : .label
-            menuTitleLabel.textColor = color
-            iconImageView.tintColor = color
+            accessibilityTraits = isMenuLabel ? [.staticText] : [.button]
+            applyMenuRowAppearance()
         }
     }
     
@@ -112,6 +116,10 @@ class ReactionMenuTableViewCell: UITableViewCell {
     required init?(coder aDecoder: NSCoder) { fatalError("\(#file) does not implement coder.") }
     
     override func setSelected(_ selected: Bool, animated: Bool) {
+        if isMenuLabel {
+            super.setSelected(false, animated: false)
+            return
+        }
         super.setSelected(selected, animated: animated)
         if #available(iOS 26.0, *) {
             updateSelectionPill(selected, animated: animated)
@@ -122,6 +130,7 @@ class ReactionMenuTableViewCell: UITableViewCell {
     }
     
     func highlight(_ highlighted: Bool, animated: Bool) {
+        if isMenuLabel { return }
         if #available(iOS 26.0, *) {
             updateSelectionPill(highlighted, animated: animated)
             backgroundColor = .clear
@@ -135,6 +144,23 @@ class ReactionMenuTableViewCell: UITableViewCell {
         if #available(iOS 26.0, *) {
             selectionPillView.layer.cornerRadius = selectionPillCornerRadius
         }
+    }
+
+    private func applyMenuRowAppearance() {
+        let titleColor: UIColor
+        let iconTint: UIColor
+        if isDestructive {
+            titleColor = .systemRed
+            iconTint = .systemRed
+        } else if isMenuLabel {
+            titleColor = .secondaryLabel
+            iconTint = .secondaryLabel
+        } else {
+            titleColor = .label
+            iconTint = .label
+        }
+        menuTitleLabel.textColor = titleColor
+        iconImageView.tintColor = iconTint
     }
 
     private func updateSelectionPill(_ isVisible: Bool, animated: Bool) {

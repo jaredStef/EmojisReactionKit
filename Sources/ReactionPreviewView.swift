@@ -504,6 +504,16 @@ public class ReactionPreviewView: UIView {
 
 
 extension ReactionPreviewView: UITableViewDelegate {
+    public func tableView(_ tableView: UITableView, willSelectRowAt indexPath: IndexPath) -> IndexPath? {
+        guard let action = getActionAtIndexPath(indexPath), !ReactionMenuLabel.isLabel(action) else { return nil }
+        return indexPath
+    }
+
+    public func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
+        guard let action = getActionAtIndexPath(indexPath) else { return true }
+        return !ReactionMenuLabel.isLabel(action)
+    }
+
     public func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
         if #available(iOS 26.0, *) {
             return nil
@@ -526,12 +536,14 @@ extension ReactionPreviewView: UITableViewDelegate {
     }
     
     public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        guard let action = getActionAtIndexPath(indexPath), !ReactionMenuLabel.isLabel(action) else { return }
         selectionGenerator?.selectionChanged()
-        self.dismiss(with: getActionAtIndexPath(indexPath))
+        self.dismiss(with: action)
     }
     
     public func tableView(_ tableView: UITableView, didHighlightRowAt indexPath: IndexPath) {
-        guard let cell = tableView.cellForRow(at: indexPath) as? ReactionMenuTableViewCell else { return }
+        guard let action = getActionAtIndexPath(indexPath), !ReactionMenuLabel.isLabel(action),
+              let cell = tableView.cellForRow(at: indexPath) as? ReactionMenuTableViewCell else { return }
         cell.highlight(true, animated: true)
     }
     
@@ -561,6 +573,15 @@ extension ReactionPreviewView : UIGestureRecognizerDelegate {
 extension ReactionPreviewView {
     @objc func panned(gestureRecognizer: UIGestureRecognizer) {
         let panPoint = gestureRecognizer.location(in: menuTableView)
+        if let indexPath = menuTableView?.indexPathForRow(at: panPoint),
+           let action = getActionAtIndexPath(indexPath),
+           ReactionMenuLabel.isLabel(action) {
+            if let currentlyHighlightedIndex {
+                highlightCell(false, at: currentlyHighlightedIndex)
+            }
+            self.currentlyHighlightedIndex = nil
+            return
+        }
         guard let indexPath = menuTableView?.indexPathForRow(at: panPoint) else {
             // If we pan outside the table and there's a cell selected, unselect it
             if let currentlyHighlightedIndex  {
@@ -724,7 +745,11 @@ extension ReactionPreviewView {
     private func enablePanGesture() {
         panGestureRecognizer.addTarget(self, action: #selector(panned(gestureRecognizer:)))
         panGestureRecognizer.cancelsTouchesInView = false
-         self.container.addGestureRecognizer(panGestureRecognizer)
+        // Match tap-to-dismiss: do not let this pan steal touches meant for the menu table or
+        // emoji strip. Otherwise UITableView highlights/selection only appear after the finger
+        // moves (pan waits to fail before touches reach subviews).
+        panGestureRecognizer.delegate = self
+        self.container.addGestureRecognizer(panGestureRecognizer)
     }
     
     private func attachToContinuedPanGesture(_ gestureRecognizer: UIGestureRecognizer) {
@@ -820,6 +845,7 @@ extension ReactionPreviewView {
             cell.menuTitle = action.title
             cell.iconImage = action.image
             cell.isDestructive = action.attributes.contains(.destructive)
+            cell.isMenuLabel = ReactionMenuLabel.isLabel(action)
             return cell
         }
         

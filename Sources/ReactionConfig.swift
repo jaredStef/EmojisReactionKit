@@ -28,7 +28,9 @@ public struct ReactionConfig {
     
     /// A context menu to display at the bottom of the target `UIView`.
     /// Set to `nil` to hide the menu.
-    /// - Important: Only `UIAction` instances are supported in the `UIMenu`.
+    ///
+    /// Use ``ReactionMenuLabel/action(title:image:)`` for non-interactive metadata rows (same layout
+    /// as actions, secondary text and icon tint, not selectable).
     public let menu: UIMenu?
     
     /// The direction from which the reaction animation should start.

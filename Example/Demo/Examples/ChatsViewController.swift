@@ -19,33 +19,64 @@ class ChatsViewController: UIViewController, UITableViewDataSource, UITableViewD
         gesture.cancelsTouchesInView = true
         return gesture
     }()
-    
-    private var messages: [Message] = [
-        Message(text: "Hey there!", isIncoming: true),
-        Message(text: "Hi! How are you?", isIncoming: false),
-        Message(text: "I'm good, thanks. What about you?", isIncoming: true),
-        Message(text: "Doing great! Thanks for asking.", isIncoming: false),
-        Message(text: "It's worth noting that the mask property effectively masks a bounded area of the view, so if you are trying to mask a view whose bounds change to reveal new content", isIncoming: false),
-        Message(text: "ou should start by asking yourself why you think you need this. If you want to display the horizontal content when clipsToBounds is YES, why not make the view big enough horizontally? It can go right off the screen on both sides, no problem. A view that is visible when it is not inside its superview is usually a very bad idea in any case (for example, the user can see it but can't touch it, which is usually undesirable and confusing).Otherwise, this is going to be a very tricky problem. You will probably need to put another view above your view and another view below it, to cover the content that sticks out above and below your view. Crude but effective.", isIncoming: true),
-        Message(text: "maskToBounds needs to be false in this case.", isIncoming: false),
-        Message(text: "ou should start by asking yourself why you think you need this. If you want to display the horizontal content when clipsToBounds is YES, why not make the view big enough horizontally? It can go right off the screen on both sides, no problem. A view that is visible when it is not inside its superview is usually a very bad idea in any case (for example, the user can see it but can't touch it, which is usually undesirable and confusing).Otherwise, this is going to be a very tricky problem. You will probably need to put another view above your view and another view below it, to cover the content that sticks out above and below your view. Crude but effective. ou should start by asking yourself why you think you need this. If you want to display the horizontal content when clipsToBounds is YES, why not make the view big enough horizontally? It can go right off the screen on both sides, no problem. A view that is visible when it is not inside its superview is usually a very bad idea in any case (for example, the user can see it but can't touch it, which is usually undesirable and confusing).Otherwise, this is going to be a very tricky problem. You will probably need to put another view above your view and another view below it, to cover the content that sticks out above and below your view. Crude but effective.", isIncoming: true),
-        Message(text: "maskToBounds needs to be false in this case.", isIncoming: false),
-        Message(text: "yourself why you think you need this", isIncoming: false),
-        Message(text: "🥹🥹🥹🥹🥹", isIncoming: false),
-        Message(text: "🥹🥹🥹🥹🥹", isIncoming: true)
-    ]
+
+    private var messages: [Message] = ChatsViewController.makeDemoMessages()
 
     private let tableView = UITableView()
     private let bg = UIImageView(image: UIImage(named: "bg"))
 
+    private static let sentDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private func reactionMenu(sentAt: Date) -> UIMenu {
+        let sentTitle = Self.sentDateFormatter.string(from: sentAt)
+        let sentLabel = ReactionMenuLabel.action(
+            title: sentTitle,
+            image: UIImage(systemName: "clock")
+        )
+        let footerSection = UIMenu(title: "", image: nil, identifier: nil, options: [.displayInline], children: [sentLabel])
+        return UIMenu(
+            title: "",
+            image: nil,
+            identifier: nil,
+            options: [.displayInline],
+            children: [ViewController.postMenu(), footerSection]
+        )
+    }
+
+    private static func makeDemoMessages() -> [Message] {
+        let base = Calendar.current.date(from: DateComponents(year: 2025, month: 6, day: 17, hour: 9, minute: 12))!
+        let lines: [(String, Bool)] = [
+            ("Hey there!", true),
+            ("Hi! How are you?", false),
+            ("I'm good, thanks. What about you?", true),
+            ("Doing great! Thanks for asking.", false),
+            ("It's worth noting that the mask property effectively masks a bounded area of the view, so if you are trying to mask a view whose bounds change to reveal new content", false),
+            ("You should start by asking yourself why you think you need this. If you want to display the horizontal content when clipsToBounds is YES, why not make the view big enough horizontally? It can go right off the screen on both sides, no problem. A view that is visible when it is not inside its superview is usually a very bad idea in any case (for example, the user can see it but can't touch it, which is usually undesirable and confusing).Otherwise, this is going to be a very tricky problem. You will probably need to put another view above your view and another view below it, to cover the content that sticks out above and below your view. Crude but effective.", true),
+            ("maskToBounds needs to be false in this case.", false),
+            ("You should start by asking yourself why you think you need this. If you want to display the horizontal content when clipsToBounds is YES, why not make the view big enough horizontally? It can go right off the screen on both sides, no problem. A view that is visible when it is not inside its superview is usually a very bad idea in any case (for example, the user can see it but can't touch it, which is usually undesirable and confusing).Otherwise, this is going to be a very tricky problem. You will probably need to put another view above your view and another view below it, to cover the content that sticks out above and below your view. Crude but effective. ou should start by asking yourself why you think you need this. If you want to display the horizontal content when clipsToBounds is YES, why not make the view big enough horizontally? It can go right off the screen on both sides, no problem. A view that is visible when it is not inside its superview is usually a very bad idea in any case (for example, the user can see it but can't touch it, which is usually undesirable and confusing).Otherwise, this is going to be a very tricky problem. You will probably need to put another view above your view and another view below it, to cover the content that sticks out above and below your view. Crude but effective.", true),
+            ("maskToBounds needs to be false in this case.", false),
+            ("yourself why you think you need this", false),
+            ("🥹🥹🥹🥹🥹", false),
+            ("🥹🥹🥹🥹🥹", true)
+        ]
+        return lines.enumerated().map { index, pair in
+            Message(text: pair.0, isIncoming: pair.1, sentAt: base.addingTimeInterval(Double(index) * 187))
+        }
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Chat"
-        
+
         self.view.backgroundColor = .systemBackground
-        bg.backgroundColor = .systemMint
+        bg.backgroundColor = .systemBackground
         bg.contentMode = .scaleAspectFill
-        
+
         bg.translatesAutoresizingMaskIntoConstraints = false
         self.view.addSubview(bg)
 
@@ -61,9 +92,9 @@ class ChatsViewController: UIViewController, UITableViewDataSource, UITableViewD
             bg.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             bg.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bg.trailingAnchor.constraint(equalTo: view.trailingAnchor)
-            
+
         ])
-        
+
         tableView.dataSource = self
         tableView.delegate = self
         tableView.register(MessageCell.self, forCellReuseIdentifier: "MessageCell")
@@ -73,7 +104,7 @@ class ChatsViewController: UIViewController, UITableViewDataSource, UITableViewD
         tableView.backgroundColor = .clear
         tableView.addGestureRecognizer(longPressGestureRecognizer)
     }
-    
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         reactionPreview?.removeFromSuperview()
@@ -92,20 +123,21 @@ class ChatsViewController: UIViewController, UITableViewDataSource, UITableViewD
         cell.configure(with: messages[indexPath.row])
         return cell
     }
-    
+
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
         let location = gesture.location(in: tableView)
         guard let indexPath = tableView.indexPathForRow(at: location),
               let cell = tableView.cellForRow(at: indexPath) as? MessageCell else {
             return
         }
-        
+
         if gesture.state == .began {
             reactionPreview?.removeFromSuperview()
+            let message = messages[indexPath.row]
             let reactConfig = ReactionConfig(
                 itemIdentifier: indexPath,
-                emojis: ["👍🏼", "😂", "❤️", "💻"],
-                menu: ViewController.existingMenu,
+                emojis: ["❤️", "👍", "😂", "‼️", "❓"],
+                menu: reactionMenu(sentAt: message.sentAt),
                 startFrom: cell.isIncoming ? .leading : .trailing,
                 continuedPanGesture: gesture
             )
@@ -177,6 +209,7 @@ class MessageCell: UITableViewCell {
 struct Message {
     let text: String
     let isIncoming: Bool
+    let sentAt: Date
 }
 
 
@@ -186,11 +219,8 @@ extension ChatsViewController : ReactionPreviewDelegate {
             print("User reacted with: \(emoji)")
         } else if let action = action {
             print("User selected: \(action.identifier.rawValue)")
-        }else if moreButton {
+        } else if moreButton {
             print("more button clicked")
         }
     }
 }
-
-
-
