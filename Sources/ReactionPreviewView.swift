@@ -9,7 +9,7 @@
 import UIKit
 
 
-public class ReactionPreviewView: UIView {
+@MainActor public class ReactionPreviewView: UIView {
     
     /// Reference to the targeted view
     private weak var _hostingView: UIView?
@@ -107,7 +107,10 @@ public class ReactionPreviewView: UIView {
     }
     
     deinit {
-        self.detachFromContinuedPanGesture()
+        // UIView teardown runs on the main thread; `deinit` itself is nonisolated under `@MainActor`.
+        MainActor.assumeIsolated {
+            detachFromContinuedPanGesture()
+        }
     }
     
     init(_ view: UIView, with config: ReactionConfig, theme: ReactionTheme? = .default) {

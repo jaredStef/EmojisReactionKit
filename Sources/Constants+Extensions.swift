@@ -185,7 +185,7 @@ extension UIView {
     ///   - delegate: An optional delegate that receives a callback when the preview is dismissed with a selected available options.
     ///
     /// - Returns: A `ReactionPreviewView` if the given view is valid; otherwise, returns `nil`.
-    @discardableResult
+    @MainActor @discardableResult
     public func react(with config: ReactionConfig, theme: ReactionTheme? = .default, delegate: ReactionPreviewDelegate?) -> ReactionPreviewView?{
         let reactionPreviewView = ReactionPreviewView(self, with: config, theme: theme)
         reactionPreviewView.delegate = delegate

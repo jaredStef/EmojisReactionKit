@@ -127,7 +127,7 @@ extension ReactionDirection {
 }
 
 // MARK: - ReactionPreviewDelegate Protocol
-@objc public protocol ReactionPreviewDelegate: AnyObject {
+@MainActor @objc public protocol ReactionPreviewDelegate: AnyObject {
     
     /// Called when the animation starts.
     @objc optional func willReact()
